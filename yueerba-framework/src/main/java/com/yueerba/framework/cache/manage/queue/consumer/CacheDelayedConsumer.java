@@ -45,7 +45,7 @@ public class CacheDelayedConsumer implements Runnable {
      *
      * @param cacheChange 要处理的缓存变化事件
      */
-    private void processCacheChange(CacheChange cacheChange) {
+    public void processCacheChange(CacheChange cacheChange) {
         // 在这里处理缓存变化事件，例如同步缓存、更新数据库等
         log.debug("处理缓存变化事件, key: {}", cacheChange.getKey());
     }

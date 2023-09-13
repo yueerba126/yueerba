@@ -5,7 +5,9 @@ import com.yueerba.framework.cache.manage.queue.producer.CacheDelayedProducer;
 import com.yueerba.framework.cache.manage.sync.DoubleCheckLocking;
 import com.yueerba.framework.cache.manage.sync.RedisDistributedLock;
 import com.yueerba.framework.cache.properties.CacheConfigProperties;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.CacheManager;
+import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.Collection;
@@ -20,16 +22,6 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * Author: yueerba
  * Date: 2023/9/12
- */
-package com.sydata.framework.cache.support;
-
-import com.sydata.framework.cache.properties.CacheConfigProperties;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Component;
-
-/**
- * Redis和Caffeine双层缓存的管理器。
- * 该类的主要职责是管理多个RedisCaffeineCache实例。
  */
 @Component
 public class RedisCaffeineCacheManager implements CacheManager {

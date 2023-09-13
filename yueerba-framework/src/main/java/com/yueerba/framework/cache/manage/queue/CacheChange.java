@@ -17,6 +17,7 @@ public class CacheChange {
      * 缓存事件的类型。
      */
     public enum EventType {
+        LOOK,       // 检索事件
         ADD,       // 添加事件
         UPDATE,    // 更新事件
         DELETE     // 删除事件

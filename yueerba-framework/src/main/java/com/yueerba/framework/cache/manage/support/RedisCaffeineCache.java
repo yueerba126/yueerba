@@ -223,8 +223,12 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
         cacheMap.keySet().forEach(bloomFilter::add);
 
         // 使用生产者将缓存变化放入队列
-        cacheMap.forEach((key, value) -> cacheDelayedProducer.produce(new CacheChange(key, value)));
+        cacheMap.forEach((key, value) -> {
+            CacheChange cacheChange = new CacheChange(CacheChange.EventType.ADD, key, value);
+            cacheDelayedProducer.produce(cacheChange);
+        });
     }
+
 
     /**
      * 批量从缓存中移除数据。
@@ -250,8 +254,13 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
         });
 
         // 使用生产者将缓存删除操作放入队列
-        cacheKeys.forEach(key -> cacheDelayedProducer.produce(new CacheChange(key, null)));
+        cacheKeys.forEach(key -> {
+            // 为每个缓存键创建删除事件
+            CacheChange cacheChange = new CacheChange(CacheChange.EventType.DELETE, key, null);
+            cacheDelayedProducer.produce(cacheChange);
+        });
     }
+
 
 
     /**
@@ -299,7 +308,7 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
     @Override
     public <T> T get(Object key, Callable<T> valueLoader) {
         String cacheKey = cacheKey(key);
-        // Check with bloom filter first
+        // 检查布隆过滤器里是否包含cacheKey
         if (!bloomFilter.contains(cacheKey)) {
             log.debug("Bloom filter check: Key does not exist, key: {}", cacheKey);
             return null;
@@ -354,7 +363,7 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
                     // 存储特殊的空值并设置过期时间
                     redisTemplate.opsForValue().set(cacheKey, NULL_VALUE, NULL_VALUE_EXPIRE_TIME);
                 }
-                // Add to Bloom filter
+                // 将键添加到布隆过滤器
                 bloomFilter.add(cacheKey);
                 caffeineCache.put(cacheKey, value);
             } catch (Exception e) {
@@ -387,12 +396,13 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
         // 向Redis中放入数据
         redisTemplate.opsForValue().set(cacheKey, value);
 
-        // Add to Bloom filter
+        // 将键添加到布隆过滤器
         bloomFilter.add(cacheKey);
         log.debug("向Redis缓存中放入数据，key: {}", cacheKey);
 
-        // 使用生产者将缓存变化放入队列
-        cacheDelayedProducer.produce(new CacheChange(cacheKey, value));
+        // 使用生产者将缓存变化放入队列，设置eventType为EventType.ADD
+        CacheChange cacheChange = new CacheChange(CacheChange.EventType.ADD, cacheKey, value);
+        cacheDelayedProducer.produce(cacheChange);
     }
 
     /**
@@ -415,8 +425,9 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
             // 向Redis中放入数据
             redisTemplate.opsForValue().setIfAbsent(cacheKey, value);
 
-            // 使用生产者将缓存变化放入队列
-            cacheDelayedProducer.produce(new CacheChange(cacheKey, value));
+            // 使用生产者将缓存变化放入队列，设置eventType为EventType.ADD
+            CacheChange cacheChange = new CacheChange(CacheChange.EventType.ADD, cacheKey, value);
+            cacheDelayedProducer.produce(cacheChange);
 
             return toValueWrapper(value);
         }
@@ -442,8 +453,9 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
         redisTemplate.delete(cacheKey);
         log.debug("从Redis缓存中移除数据，key: {}", cacheKey);
 
-        // 使用生产者将缓存删除操作放入队列
-        cacheDelayedProducer.produce(new CacheChange(cacheKey, null));
+        // 使用生产者将缓存删除操作放入队列，设置eventType为EventType.DELETE
+        CacheChange cacheChange = new CacheChange(CacheChange.EventType.DELETE, cacheKey, null);
+        cacheDelayedProducer.produce(cacheChange);
     }
 
     /**
@@ -463,6 +475,9 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
             // 从Caffeine缓存中移除数据
             caffeineCache.invalidate(cacheKey);
             evicted = true;
+            // 使用生产者将缓存删除操作放入队列，设置eventType为EventType.DELETE
+            CacheChange cacheChange = new CacheChange(CacheChange.EventType.DELETE, cacheKey, null);
+            cacheDelayedProducer.produce(cacheChange);
         }
 
         // 检查Redis中是否存在该键
@@ -471,18 +486,17 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
             // 从Redis中移除数据
             redisTemplate.delete(cacheKey);
             evicted = true;
+            // 使用生产者将缓存删除操作放入队列，设置eventType为EventType.DELETE
+            CacheChange cacheChange = new CacheChange(CacheChange.EventType.DELETE, cacheKey, null);
+            cacheDelayedProducer.produce(cacheChange);
         }
 
-        if (evicted) {
-            // 使用生产者将缓存删除操作放入队列
-            cacheDelayedProducer.produce(new CacheChange(cacheKey, null));
-        } else {
+        if (!evicted) {
             log.debug("键未在任何缓存中找到，因此未执行逐出操作，key: {}", cacheKey);
         }
 
         return evicted;
     }
-
 
     /**
      * 清空缓存。
@@ -500,8 +514,11 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
             redisTemplate.delete(keys);
             log.debug("清空Redis缓存，keys: {}", keys);
 
-            // 使用生产者将缓存清空操作放入队列
-            keys.forEach(key -> cacheDelayedProducer.produce(new CacheChange(key, null)));
+            // 使用生产者将缓存清空操作放入队列，设置eventType为EventType.DELETE
+            for (String key : keys) {
+                CacheChange cacheChange = new CacheChange(CacheChange.EventType.DELETE, key, null);
+                cacheDelayedProducer.produce(cacheChange);
+            }
         }
     }
 
@@ -522,8 +539,11 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
             redisTemplate.delete(keysToInvalidate);
             log.debug("清空Redis缓存，keys: {}", keysToInvalidate);
 
-            // 使用生产者将缓存清空操作放入队列
-            keysToInvalidate.forEach(key -> cacheDelayedProducer.produce(new CacheChange(key, null)));
+            // 使用生产者将缓存清空操作放入队列，设置eventType为EventType.DELETE
+            for (String key : keysToInvalidate) {
+                CacheChange cacheChange = new CacheChange(CacheChange.EventType.DELETE, key, null);
+                cacheDelayedProducer.produce(cacheChange);
+            }
             return true;
         }
 
@@ -541,7 +561,7 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
         String cacheKey = cacheKey(key);
 
         // 从Caffeine缓存中检索
-        // Check with bloom filter first
+        // 检查布隆过滤器里是否包含cacheKey
         if (!bloomFilter.contains(cacheKey)) {
             log.debug("Bloom filter check: Key does not exist, key: {}", cacheKey);
             return null;
@@ -557,8 +577,8 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
         value = redisTemplate.opsForValue().get(cacheKey);
         if (value != null) {
             log.debug("从Redis缓存中检索到数据，key: {}", cacheKey);
-            // 异步地将数据放回Caffeine缓存
-            cacheDelayedConsumer.consume(new CacheChange(cacheKey, value));
+            CacheChange cacheChange = new CacheChange(CacheChange.EventType.LOOK, cacheKey, null);
+            cacheDelayedConsumer.processCacheChange(cacheChange);
         } else {
             log.debug("在任何缓存中都找不到数据，key: {}", cacheKey);
         }
