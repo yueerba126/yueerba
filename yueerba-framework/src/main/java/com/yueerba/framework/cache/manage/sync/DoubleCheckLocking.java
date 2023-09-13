@@ -1,9 +1,5 @@
 package com.yueerba.framework.cache.manage.sync;
 
-package com.sydata.framework.cache.sync;
-
-import com.sydata.framework.cache.support.MultiCache;
-import com.yueerba.framework.cache.manage.support.RedisCaffeineCache;
 import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Component;
 

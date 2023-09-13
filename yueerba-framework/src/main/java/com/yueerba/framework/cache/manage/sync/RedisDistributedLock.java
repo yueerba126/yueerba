@@ -1,7 +1,5 @@
 package com.yueerba.framework.cache.manage.sync;
 
-package com.sydata.framework.cache.sync;
-
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
 import org.springframework.beans.factory.annotation.Autowired;

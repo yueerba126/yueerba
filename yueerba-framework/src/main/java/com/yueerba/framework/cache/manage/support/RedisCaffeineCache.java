@@ -2,8 +2,9 @@ package com.yueerba.framework.cache.manage.support;
 
 import cn.hutool.extra.spring.SpringUtil;
 import com.github.benmanes.caffeine.cache.Cache;
-import com.yueerba.framework.cache.manage.consumer.CacheDelayedConsumer;
-import com.yueerba.framework.cache.manage.producer.CacheDelayedProducer;
+import com.yueerba.framework.cache.manage.queue.CacheChange;
+import com.yueerba.framework.cache.manage.queue.consumer.CacheDelayedConsumer;
+import com.yueerba.framework.cache.manage.queue.producer.CacheDelayedProducer;
 import com.yueerba.framework.cache.manage.sync.DoubleCheckLocking;
 import com.yueerba.framework.cache.manage.sync.RedisDistributedLock;
 import com.yueerba.framework.cache.properties.CacheConfigProperties;
@@ -20,7 +21,6 @@ import org.springframework.data.redis.serializer.RedisSerializer;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.concurrent.Callable;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import static com.yueerba.framework.cache.properties.CacheConfigProperties.CACHE_PREFIX;
@@ -104,7 +104,7 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
     private static final int NULL_VALUE_EXPIRE_TIME = 300;
 
     /**
-     * 构造函数，用于初始化必要的依赖项。
+     * 构造函数，用于初始化必要依赖项。
      *
      * @param cacheName 缓存名
      * @param cacheConfigProperties 缓存配置属性
@@ -139,7 +139,10 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
                 .add(SpringUtil.getApplicationName())
                 .add(CACHE_PREFIX)
                 .add(cacheName) + KEY_SEGMENTATION;
+
         log.debug("创建缓存实例名:{},缓存key前缀:{}", cacheName, cacheNamePrefix);
+
+        // 布隆过滤器初始化
         this.bloomFilter = redissonClient.getBloomFilter(cacheNamePrefix + "bloomFilter");
         bloomFilter.tryInit(100000L, 0.03);
     }
@@ -218,6 +221,9 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
 
         // 将键添加到布隆过滤器中
         cacheMap.keySet().forEach(bloomFilter::add);
+
+        // 使用生产者将缓存变化放入队列
+        cacheMap.forEach((key, value) -> cacheDelayedProducer.produce(new CacheChange(key, value)));
     }
 
     /**
@@ -242,6 +248,9 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
                 return null;
             }
         });
+
+        // 使用生产者将缓存删除操作放入队列
+        cacheKeys.forEach(key -> cacheDelayedProducer.produce(new CacheChange(key, null)));
     }
 
 
@@ -381,6 +390,9 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
         // Add to Bloom filter
         bloomFilter.add(cacheKey);
         log.debug("向Redis缓存中放入数据，key: {}", cacheKey);
+
+        // 使用生产者将缓存变化放入队列
+        cacheDelayedProducer.produce(new CacheChange(cacheKey, value));
     }
 
     /**
@@ -403,13 +415,15 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
             // 向Redis中放入数据
             redisTemplate.opsForValue().setIfAbsent(cacheKey, value);
 
+            // 使用生产者将缓存变化放入队列
+            cacheDelayedProducer.produce(new CacheChange(cacheKey, value));
+
             return toValueWrapper(value);
         }
 
         log.debug("缓存中已存在键：{}，不放入新值", cacheKey);
         return toValueWrapper(existingValue);
     }
-
 
     /**
      * 从缓存中移除指定的key。
@@ -427,6 +441,9 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
         // 从Redis中移除数据
         redisTemplate.delete(cacheKey);
         log.debug("从Redis缓存中移除数据，key: {}", cacheKey);
+
+        // 使用生产者将缓存删除操作放入队列
+        cacheDelayedProducer.produce(new CacheChange(cacheKey, null));
     }
 
     /**
@@ -456,12 +473,16 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
             evicted = true;
         }
 
-        if (!evicted) {
+        if (evicted) {
+            // 使用生产者将缓存删除操作放入队列
+            cacheDelayedProducer.produce(new CacheChange(cacheKey, null));
+        } else {
             log.debug("键未在任何缓存中找到，因此未执行逐出操作，key: {}", cacheKey);
         }
 
         return evicted;
     }
+
 
     /**
      * 清空缓存。
@@ -478,6 +499,9 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
         if (keys != null && !keys.isEmpty()) {
             redisTemplate.delete(keys);
             log.debug("清空Redis缓存，keys: {}", keys);
+
+            // 使用生产者将缓存清空操作放入队列
+            keys.forEach(key -> cacheDelayedProducer.produce(new CacheChange(key, null)));
         }
     }
 
@@ -497,6 +521,9 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
         if (keysToInvalidate != null && !keysToInvalidate.isEmpty()) {
             redisTemplate.delete(keysToInvalidate);
             log.debug("清空Redis缓存，keys: {}", keysToInvalidate);
+
+            // 使用生产者将缓存清空操作放入队列
+            keysToInvalidate.forEach(key -> cacheDelayedProducer.produce(new CacheChange(key, null)));
             return true;
         }
 
@@ -530,6 +557,8 @@ public class RedisCaffeineCache extends AbstractValueAdaptingCache implements Mu
         value = redisTemplate.opsForValue().get(cacheKey);
         if (value != null) {
             log.debug("从Redis缓存中检索到数据，key: {}", cacheKey);
+            // 异步地将数据放回Caffeine缓存
+            cacheDelayedConsumer.consume(new CacheChange(cacheKey, value));
         } else {
             log.debug("在任何缓存中都找不到数据，key: {}", cacheKey);
         }

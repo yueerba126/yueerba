@@ -1,7 +1,7 @@
 package com.yueerba.framework.cache.manage.sync;
 
-import com.yueerba.framework.cache.manage.consumer.CacheDelayedConsumer;
-import com.yueerba.framework.cache.manage.producer.CacheDelayedProducer;
+import com.yueerba.framework.cache.manage.queue.consumer.CacheDelayedConsumer;
+import com.yueerba.framework.cache.manage.queue.producer.CacheDelayedProducer;
 import com.yueerba.framework.cache.manage.support.RedisCaffeineCache;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;

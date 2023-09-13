@@ -1,22 +1,16 @@
 package com.yueerba.framework.cache.manage.support;
 
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
-import com.yueerba.framework.cache.manage.consumer.CacheDelayedConsumer;
-import com.yueerba.framework.cache.manage.producer.CacheDelayedProducer;
+import com.yueerba.framework.cache.manage.queue.consumer.CacheDelayedConsumer;
+import com.yueerba.framework.cache.manage.queue.producer.CacheDelayedProducer;
 import com.yueerba.framework.cache.manage.sync.DoubleCheckLocking;
 import com.yueerba.framework.cache.manage.sync.RedisDistributedLock;
 import com.yueerba.framework.cache.properties.CacheConfigProperties;
-import lombok.extern.slf4j.Slf4j;
-import org.redisson.api.RedissonClient;
 import org.springframework.cache.CacheManager;
-import org.springframework.data.redis.core.RedisTemplate;
 
 import java.time.Duration;
 import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.TimeUnit;
 
 /**
  * Description:
@@ -31,12 +25,7 @@ package com.sydata.framework.cache.support;
 
 import com.sydata.framework.cache.properties.CacheConfigProperties;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Component;
-
-import java.util.Collection;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Redis和Caffeine双层缓存的管理器。
